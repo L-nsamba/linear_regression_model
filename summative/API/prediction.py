@@ -77,10 +77,9 @@ class WaterPointInput(BaseModel):
         description="Water infrastructure type (e.g., Handpump, Scheme).",
     )
 
-    wp_revenue_model: str = Field(
-        ...,
-        min_length=1,
-        description="Revenue collection model.",
+    wp_revenue_model: Optional[str] = Field(
+        default=None,
+        description="Revenue collection model (nullable).",
     )
 
     volume_method: Optional[str] = Field(
