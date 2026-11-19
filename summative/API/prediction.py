@@ -10,6 +10,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
+import os
+import hmac
+import tempfile
+import threading
+
+from fastapi import File, Header, UploadFile
+
+import hashlib
+import json
+
+# Helpful to render and allowes running API as both API.prediction:app and prediction:app
+try:
+    from .retrain import retrain_model, promote_candidate
+except ImportError:
+    from retrain import retrain_model, promote_candidate
+
 # Model configuration
 MODEL_PATH = Path(__file__).resolve().parent / "best_model.pkl"
 model_store = {}
@@ -49,7 +65,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Key"],
 )
 
 # Pydantic Input and Output Schemas
@@ -195,3 +211,153 @@ def predict_revenue(payload: WaterPointInput):
             status_code=500,
             detail="An internal prediction error occurred."
         ) from exc
+
+# Preventing overlapping retraining calls in this API process
+retraining_lock = threading.Lock()
+
+# Protection against repeatedly presenting retraining_batch.csv as new data
+BATCH_REGISTRY_PATH = MODEL_PATH.parent / "processed_batches.json"
+
+@app.post("/retrain", tags=["Model Management"])
+def trigger_retraining(
+    file: UploadFile = File(...),
+    x_admin_key: str | None = Header(default=None),
+):
+
+    # Verifying administrator authorization
+    expected_key = os.getenv("RETRAIN_API_KEY")
+
+    if not expected_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Retraining is not configured."
+        )
+
+    if not x_admin_key or not hmac.compare_digest(
+        x_admin_key, expected_key
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid administrator key"
+        )
+
+    # Validating file type
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV uploads are supported"
+        )
+
+    # Preventing simultaneous retraining requests
+    if not retraining_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=409,
+            detail="Another retraining job is already running."
+        )
+
+    temp_path = None
+
+    try:
+        # Limit uploads to 5MB
+        max_size = 5 * 1024 * 1024
+        contents = file.file.read(max_size + 1)
+
+        if len(contents) > max_size:
+            raise HTTPException(
+                status_code=413,
+                detail="Uploaded CSV exceeds 5MB"
+            )
+
+        # Identifying the uploaded batch
+        batch_id = hashlib.sha256(contents).hexdigest()
+
+        # Checking previously promoted batches
+        processed_batches = set()
+
+        if BATCH_REGISTRY_PATH.exists():
+            processed_batches = set(
+                json.loads(
+                    BATCH_REGISTRY_PATH.read_text(
+                        encoding="utf-8"
+                    )
+                )
+            )
+
+        if batch_id in processed_batches:
+            raise HTTPException(
+                status_code=409,
+                detail="This batch has already been processed."
+            )
+
+        # Saving the upload temporarily
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            suffix=".csv",
+            delete=False
+        ) as temp_file:
+            temp_file.write(contents)
+            temp_path = Path(temp_file.name)
+
+        # Executing the existing retraining workflow
+        results = retrain_model(temp_path)
+
+        # Not promoting a candidate that failed validation
+        if not results["candidate_improved"]:
+            return {
+                "message": (
+                    "Retraining completed, but the candidate "
+                    "did not improve validation MSE."
+                ),
+                "model_updated": False,
+                "results": results,
+            }
+
+        # Promoting and loading the updated model
+        updated_pipeline = promote_candidate()
+
+        # Ensuring subsequent predictions use the new pipeline
+        model_store["pipeline"] = updated_pipeline
+
+        # Recording the successfully promoted batch
+        processed_batches.add(batch_id)
+
+        registry_temp = BATCH_REGISTRY_PATH.with_suffix(".tmp")
+        registry_temp.write_text(
+            json.dumps(sorted(processed_batches), indent=2),
+            encoding="utf-8"
+        )
+        os.replace(registry_temp, BATCH_REGISTRY_PATH)
+
+        return {
+            "message": "Model retrained and activated successfully.",
+            "model_updated": True,
+            "results": {
+                **results,
+                "production_model_unchanged": False,
+            },
+        }
+
+    except HTTPException:
+        raise
+
+    except(ValueError, pd.errors.ParserError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid retraining dataset"
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Retraining or model activation failed."
+        ) from exc
+
+    finally:
+        try:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+        finally:
+            try:
+                file.file.close()
+            finally:
+                retraining_lock.release()
