@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:water_revenue_predictor/core/constants/water_point_options.dart';
+import 'package:water_revenue_predictor/models/prediction_result.dart';
 import 'package:water_revenue_predictor/models/water_point_input.dart';
-import 'package:water_revenue_predictor/screens/result_screen.dart';
 import 'package:water_revenue_predictor/services/prediction_service.dart';
 
 class PredictionScreen extends StatefulWidget {
@@ -26,6 +26,8 @@ class _PredictionScreenState extends State<PredictionScreen> {
   String _selectedVolumeMethod = 'Not specified';
 
   bool _isLoading = false;
+  PredictionResult? _predictionResult;
+  String? _errorMessage;
 
   @override
   void dispose() {
@@ -37,7 +39,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
     super.dispose();
   }
 
-  String? _validateNumber(String? value, {bool optional = false}) {
+  String? _validateNumber(String? value, {bool optional = false, double? max}) {
     final input = value?.trim() ?? '';
 
     if (input.isEmpty) {
@@ -54,6 +56,10 @@ class _PredictionScreenState extends State<PredictionScreen> {
       return 'Value cannot be negative';
     }
 
+    if (max != null && number > max) {
+      return 'Maximum allowed value is ${max.toStringAsFixed(0)}';
+    }
+
     return null;
   }
 
@@ -61,6 +67,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
     required String label,
     required TextEditingController controller,
     bool optional = false,
+    double? max,
     String? helperText,
   }) {
     return TextFormField(
@@ -71,14 +78,27 @@ class _PredictionScreenState extends State<PredictionScreen> {
         helperText: helperText,
         border: const OutlineInputBorder(),
       ),
-      validator: (value) => _validateNumber(value, optional: optional),
+      validator: (value) =>
+          _validateNumber(value, optional: optional, max: max),
     );
   }
 
   Future<void> _submitPrediction() async {
     if (_isLoading) return;
 
-    if (!_formKey.currentState!.validate()) return;
+    // Clear the previous prediction or error.
+    setState(() {
+      _predictionResult = null;
+      _errorMessage = null;
+    });
+
+    // Validate inputs before contacting the API.
+    if (!_formKey.currentState!.validate()) {
+      setState(() {
+        _errorMessage = 'Please correct the highlighted fields and try again.';
+      });
+      return;
+    }
 
     final input = WaterPointInput(
       wpTypeCat: _selectedInfrastructureType!,
@@ -98,6 +118,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
           ? null
           : double.parse(_populationWithin5kmController.text.trim()),
     );
+
     setState(() => _isLoading = true);
 
     try {
@@ -105,24 +126,25 @@ class _PredictionScreenState extends State<PredictionScreen> {
 
       if (!mounted) return;
 
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ResultScreen(predictionResult: result),
-        ),
-      );
+      // Display the prediction on the same screen.
+      setState(() {
+        _predictionResult = result;
+        _errorMessage = null;
+      });
+    } on PredictionException catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = error.message;
+        _predictionResult = null;
+      });
     } catch (error) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            error is PredictionException
-                ? error.message
-                : 'An unexpected error occured.',
-          ),
-        ),
-      );
+      setState(() {
+        _errorMessage = 'An unexpected error occurred. Please try again.';
+        _predictionResult = null;
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -230,6 +252,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
             _buildNumberField(
               label: 'Number of Households',
               controller: _householdsController,
+              max: 1000,
             ),
 
             const SizedBox(height: 16),
@@ -237,6 +260,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
             _buildNumberField(
               label: 'Number of Taps',
               controller: _tapsController,
+              max: 50,
             ),
 
             const SizedBox(height: 16),
@@ -244,6 +268,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
             _buildNumberField(
               label: 'Last Recorded Population Served',
               controller: _populationController,
+              max: 25000,
             ),
 
             const SizedBox(height: 16),
@@ -251,6 +276,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
             _buildNumberField(
               label: 'Waterpoints Within 1 km',
               controller: _nearbyWaterpointsController,
+              max: 70,
             ),
 
             const SizedBox(height: 16),
@@ -259,6 +285,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
               label: 'Population Within 5 km',
               controller: _populationWithin5kmController,
               optional: true,
+              max: 850000,
               helperText: 'Optional - leave blank if unknown',
             ),
 
@@ -274,15 +301,107 @@ class _PredictionScreenState extends State<PredictionScreen> {
                         height: 22,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Predict Annual Revenue'),
+                    : const Text('Predict'),
               ),
             ),
 
-            const SizedBox(height: 15),
+            const SizedBox(height: 20),
+
+            // Prediction or error appears here.
+            _buildPredictionOutput(),
+
+            const SizedBox(height: 16),
 
             Text(
               'Predictions are estimates based on historical '
               'infrastructure data, not guaranteed future revenue.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPredictionOutput() {
+    // No result or error yet.
+    if (_predictionResult == null && _errorMessage == null) {
+      return const SizedBox.shrink();
+    }
+
+    // Error display
+    if (_errorMessage != null) {
+      return Card(
+        color: Theme.of(context).colorScheme.errorContainer,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 36,
+                color: Theme.of(context).colorScheme.onErrorContainer,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Successful prediction display
+    final result = _predictionResult!;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Icon(
+              Icons.water_drop_outlined,
+              size: 48,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+
+            const SizedBox(height: 16),
+
+            Text(
+              'Estimated Annual Revenue',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+
+            const SizedBox(height: 12),
+
+            Text(
+              '\$${result.predictedAnnualRevenue.toStringAsFixed(2)}',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              '${result.currency} per year',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+
+            const SizedBox(height: 16),
+
+            Text(
+              'This estimate is based on historical rural water '
+              'infrastructure data. Actual revenue may differ.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodySmall,
             ),
