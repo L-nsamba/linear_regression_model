@@ -50,7 +50,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Explict development origins to be updated with deployed URL
+# Allow browser requests only from explicitly trusted development origins.
+# Restrict methods and headers to those needed by the API.
+# Credentials are disabled because the application does not use
+# browser cookies or authenticated browser sessions.
+# Flutter mobile requests are not subject to browser CORS enforcement.
 ALLOWED_ORIGINS = [
     "http://localhost",
     "http://localhost:3000",
@@ -107,36 +111,41 @@ class WaterPointInput(BaseModel):
     num_hh: float = Field(
         ...,
         ge=0,
+        le=1000,
         allow_inf_nan=False,
-        description="Number of households.",
+        description="Number of households (0-1000).",
     )
 
     num_taps: float = Field(
         ...,
         ge=0,
+        le=50,
         allow_inf_nan=False,
-        description="Number of water taps.",
+        description="Number of water taps (0-50).",
     )
 
     wp_pop_last: float = Field(
         ...,
         ge=0,
+        le=25000,
         allow_inf_nan=False,
-        description="Last recorded population served",
+        description="Last recorded population served (0-25000).",
     )
 
     wp_count_within_1000m: float = Field(
         ...,
         ge=0,
+        le=70,
         allow_inf_nan=False,
-        description="Number of waterpoints within 1,000 metres.",
+        description="Number of waterpoints within 1,000 metres (0-70).",
     )
 
     Population_Within_5000m: Optional[float] = Field(
         default=None,
         ge=0,
+        le=850000,
         allow_inf_nan=False,
-        description="Population within 5,000 metres (nullable).",
+        description="Population within 5,000 metres (0-850000; nullable).",
     )
 
 class PredictionResponse(BaseModel):
