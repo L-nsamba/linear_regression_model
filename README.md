@@ -45,7 +45,7 @@ The trained model is served through a FastAPI application deployed on Render
 - **Health Check:** ```GET /health```
 
 ## 4. Video Demonstration
-In progres, coming soon 🚧.....
+- [**Regression Analysis Video Demonstration**](https://www.youtube.com/watch?v=u29xl3l3je8)
 
 ## 5. How to Run the Flutter Mobile Application
 ### Prerequisites 
