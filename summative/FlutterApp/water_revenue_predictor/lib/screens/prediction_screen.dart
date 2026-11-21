@@ -169,7 +169,7 @@ class _PredictionScreenState extends State<PredictionScreen> {
             const SizedBox(height: 8),
 
             const Text(
-              'Enter the characteristic of a rural water '
+              'Enter the characteristics of a rural water '
               'infrastructure facility to estimate its annual revenue.',
             ),
 
@@ -398,13 +398,6 @@ class _PredictionScreenState extends State<PredictionScreen> {
             ),
 
             const SizedBox(height: 16),
-
-            Text(
-              'This estimate is based on historical rural water '
-              'infrastructure data. Actual revenue may differ.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
           ],
         ),
       ),
