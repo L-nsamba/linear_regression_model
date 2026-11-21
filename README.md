@@ -277,4 +277,75 @@ or redeployment
 The tested handpump example returned an estimated annual revenue of $2.33 USD, matching the expected prediction
 from the originally deployed model
 
+## 11. Reproducing the Python Environments
+The project uses uv for dependency management
 
+Separate pyproject.toml and uv.lock files are provided for the machine learning project and API
+
+### Machine Learning Environment
+
+From the repository root
+```
+  cd summative
+  uv sync --locked
+```
+
+This installs the main project's dependencies into its virtual environment
+
+The notebook is available here. [View the Multivariate Linear Regression Notebook](summative/linear_regression/multivariate.ipynb)
+
+### API Environment
+
+From ```summative/```
+
+```
+  cd API
+  uv sync --locked
+```
+Start the local API and view from local swagger documentation
+```
+  uv run --locked uvicorn prediction:app --reload
+```
+
+The API also contains a requirements.txt  file exported from its uv environment from Render deployment
+
+To regenerate it from ```summative/API/```
+```
+  uv export --locked --no-dev --no-hashes --format requirements-txt -o requirements.txt
+```
+
+The retraining endpoint requires  the ```RETRAIN_API_KEY``` environment variable.
+
+On Windows, if uv encounters filesystem linking problems, the environment can be synchronized using
+```
+  uv sync --locked --link-mode=copy
+```
+
+## 12. Repository Structure 
+```
+linear_regression_model/
+├── README.md
+└── summative/
+      ├── pyproject.toml          
+      ├── uv.lock         
+      ├── linear_regression/
+      |      ├── multivariate.ipynb
+      |      └── data/
+      ├── API/          
+      |   ├── prediction.py         
+      |   ├── retrain.py
+      |   ├── best_model.pkl
+      |   ├── uv.lock
+      |   ├── requirements.txt
+      |   └── data/         
+      └── FlutterApp/
+```
+
+## 13. Limitations and Future Improvements
+- The dataset may not represent every rural water infrastructure context across Africa
+- Revenue distributions are highly skewed, and zero-revenue observations present challenges for regression
+- Predictions represent estimates rather than guaranteed annual revenue
+- Missing values and anonymized dataset fields limit the information available for modelling
+- The retraining demonstration uses previously withheld labeled records rather than newly collected field data
+- Retraining does not yet maintain a fully cumulative history of all previously updated batches
+- Runtime model updates are not permanently stored on the current Render free service
