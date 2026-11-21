@@ -160,8 +160,7 @@ decision trees and can capture interactions that are difficult for linear models
 A separate baseline Random Forest configuration performed better on observed test split; however, the
 validation-selected model was retained to avoid revising model selection based on the final test results
 
-The selected model and preprocessing pipeline were saved using joblib as:
-[Best Model](summative/linear_regression/API/best_model.pkl)
+The selected model and preprocessing pipeline were saved using joblib as ```API/best_model.pkl```
 
 The notebook also contains the single-observation prediction test and the required regression scatter plots
 
