@@ -101,6 +101,7 @@ between infrastructure characteristics and annual revenue
 
 ### Correlation Analysis
 ![Correlation Analysis](summative/FlutterApp/water_revenue_predictor/assets/screenshots/correlation_heatmap.png)
+
 A correlation heatmap was used to examine linear relationships among numerical variables and the revenue target.
 Together with the distribution analysis, it informed the selection and interpretation of model predictors
 
@@ -147,6 +148,7 @@ helping assess convergence and the effects of optimization choices
 All final models were evaluated on the same original held-out test set using Mean Squared Error (MSE),
 Mean Absolute Error (MAE),  the coefficient of determination (R²), negative predictions count, and negative prediction percentage
 ![Model Comparison](summative/FlutterApp/water_revenue_predictor/assets/screenshots/model_comparison.png)
+![Model Comparison](summative/FlutterApp/water_revenue_predictor/assets/screenshots/model_comparison_visualization.png)
 
 The tuned Random Forest Regressor was selected using validation performance and achieved
 the lowest MSE among the four final models
@@ -158,5 +160,121 @@ decision trees and can capture interactions that are difficult for linear models
 A separate baseline Random Forest configuration performed better on observed test split; however, the
 validation-selected model was retained to avoid revising model selection based on the final test results
 
-The selected model and preprocessing pipeline
+The selected model and preprocessing pipeline were saved using joblib as:
+[Best Model](summative/linear_regression/API/best_model.pkl)
+
+The notebook also contains the single-observation prediction test and the required regression scatter plots
+
+## 8. FastAPI Implementation and Validation
+The backend uses FastAPI, Pydantic, pandas, and the serialized scikit-learn pipeline
+
+### Prediction Endpoint
+```POST /predict```
+The endpoint accepts the eight input variables, validates them using a Pydantic model, and returns the 
+predicted annual revenue
+
+Numerical inputs are constrained to non-negative, dataset-informed ranges
+
+| Variable | Accepted range |
+| :--- | :--- |
+| num_hh | 0–1,000 |
+| num_taps | 0–50 |
+| wp_pop_last | 0–25,000 |
+| wp_count_within_1000m | 0–70 |
+| Population_Within_5000m | 0–850,000, or null |
+
+The upper bounds were selected slightly above the observed dataset maxima to accommodate the available
+observations while rejecting unusually extreme inputs. They are application-specific limits rather
+than universal infrastructure limits
+
+### Successful Swagger Prediction & Input Validation
+
+<table width="300">
+  <tr>
+    <th colspan="2">FastAPI Validation </th>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="summative/FlutterApp/water_revenue_predictor/assets/screenshots/api_prediction.png" alt="Input Validation Swagger" height="400" width="800"/>
+    </td>
+    <td width="50%" align="center">
+      <img src="summative/FlutterApp/water_revenue_predictor/assets/screenshots/api_validation.png" alt="Second Screenshot" height="400" width="800" />
+    </td>
+  </tr>
+</table>
+
+
+### CORS Configuration
+The API implements FastAPI's CORSMiddleware, explicity defining:
+- allow_origins
+- allow_methods
+- allow_headers
+- allow_credentials
+
+Allowed browser origins are restricted to designated development addresses rather than using a wildcard
+
+The API permits the HTTP methods and headers required by its endpoints. Browser credentials are disabled
+because the application does not rely on cookie-based sessions
+
+Flutter's native mobile HTTP client is not subject to browser CORS restrictions
+
+## 9. Model Retraining
+The API includes an authenticated ```POST /retrain``` endpoint that accepts a CSV file containing labeled
+infrastructure observations
+
+Uploading an eligible dataset initiates the retraining procedure without requiring a separate training command
+
+### Retraining Workflow
+1. Receive a CSV file and validate the administrative key
+2. Verify the uploaded dataset and check for previously processed batches
+3. Combine the uploaded observations with the original training records
+4. Fit a candidate model
+5. Evaluate the candidate and the existing model on the designated validation subset
+6. Promote the candidate if validation MSE improves
+7. Activate the promoted model for subsequent ```/predict``` requests
+
+**Note:** Because the selected model is Random Forest, retraining involves refitting on the original
+training data and uploaded observations rather than using ```partial_fit```
+
+### Retraining Experiment
+A batch of 300 genuine labeled observations was withheld before the initial training procedure to simulate
+the later arrival of additional data
+
+In the local retraining experiment, 240 observations were incorporated into candidate training, while 60
+were used for evaludation
+
+| Metric | Existing Model | Candidate Model |
+| :--- | :--- | :--- |
+| Validation MSE | 150,248.52 | 138,183.44 |
+
+The candidate achieved approximately 8.03% lower MSE on this retraining evaluation subset
+
+These values should not be compared directly with the original held-out test set results because the evaluation
+dataset differ
+
+The API also implements upload-size restrictions, duplicate-batch detection, and protection against overlapping
+retraining requests within a single process
+
+**Deployment limitation:** The model retrained during runtime may revert to the committed model after a service restart
+or redeployment
+
+## 10. Flutter Application
+
+<table width="100%" align="center">
+  <tr>
+    <th colspan="2">Prediction Form & Result</th>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="summative/FlutterApp/water_revenue_predictor/assets/screenshots/flutter_form.png" alt="Flutter Form" width="250" />
+    </td>
+    <td width="50%" align="center">
+      <img src="summative/FlutterApp/water_revenue_predictor/assets/screenshots/flutter_prediction.png" alt="Flutter Prediction" width="250" />
+    </td>
+  </tr>
+</table>
+
+The tested handpump example returned an estimated annual revenue of $2.33 USD, matching the expected prediction
+from the originally deployed model
+
 
