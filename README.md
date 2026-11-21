@@ -145,6 +145,18 @@ helping assess convergence and the effects of optimization choices
 
 ### Model Comparison
 All final models were evaluated on the same original held-out test set using Mean Squared Error (MSE),
-Mean Absolute Error (MAE), and the coefficient of determination (R²)
+Mean Absolute Error (MAE),  the coefficient of determination (R²), negative predictions count, and negative prediction percentage
+![Model Comparison](summative/FlutterApp/water_revenue_predictor/assets/screenshots/model_comparison.png)
 
+The tuned Random Forest Regressor was selected using validation performance and achieved
+the lowest MSE among the four final models
+
+Random Forest is suitable for this dataset because relationships between revenue, infrastructure capacity,
+population, and revenue-collection methods may be nonlinear. Its ensemble approach combines multiple
+decision trees and can capture interactions that are difficult for linear models to represent
+
+A separate baseline Random Forest configuration performed better on observed test split; however, the
+validation-selected model was retained to avoid revising model selection based on the final test results
+
+The selected model and preprocessing pipeline
 
